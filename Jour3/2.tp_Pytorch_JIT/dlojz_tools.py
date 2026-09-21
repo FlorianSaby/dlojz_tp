@@ -14,9 +14,9 @@ from glob import glob
 import torch
 
 ###############################
-#Author : Bertrand CABOT, Myriam Peyrounette from IDRIS(CNRS)
+# Author : Bertrand CABOT, Myriam Peyrounette from IDRIS(CNRS)
 #
-########################
+# #######################
 
 
 def controle_technique(jobid):
@@ -41,38 +41,38 @@ def controle_technique(jobid):
                 it_time = float(line.split(' ')[-4])
                 it_time_std = float(line.split(' ')[-1][:-2])
                 it_time_min = float(line.split(' ')[-6])
-            if "Loading performance" in line: 
+            elif "Loading performance" in line: 
                 load_time = float(line.split(' ')[-4])
                 load_time_std = float(line.split(' ')[-1][:-2])
                 load_time_min = float(line.split(' ')[-6])
-            if "Forward performance" in line: 
+            elif "Forward performance" in line: 
                 for_time = float(line.split(' ')[-4])
-            if "Backward performance" in line: 
+            elif "Backward performance" in line: 
                 back_time = float(line.split(' ')[-4])
-            if "batch per epoch" in line: 
+            elif "batch per epoch" in line: 
                 n_batch = float(line.split(' ')[-1])
-            if ">>> Validation time:" in line: 
+            elif ">>> Validation time:" in line: 
                 val_time = float(line.split(':')[-1])
-            if ">>> Training on " in line:
+            elif ">>> Training on " in line:
                 gpu = line.split()[-2]
-            if "global batch size" in line:
+            elif "global batch size" in line:
                 bs = line.split()[3]
-            if "Optimizer:" in line:
+            elif "Optimizer:" in line:
                 write_optim=True
                 optim = line.split(':')[-1] + '<br>'
-            elif write_optim:
+            elif write_optim: # Store the next few lines pertaining to the optimizer
                 optim = optim + line + '<br>'
                 if ')' in line and '(' not in line:
                     write_optim=False
-            if 'optimizer_name' in line:
+            elif 'optimizer_name' in line:
                 optim = line.split('  ')[-1]
-            if 'optimizer_params' in line:
+            elif 'optimizer_params' in line:
                 optim = optim + '<br>' + ('<br>').join(line.split('  ')[-1].split('. ')[-1].split(', '))
-            if 'scheduler_name' in line:
+            elif 'scheduler_name' in line:
                 optim = optim + '<br>' + line.split('  ')[-1]
-            if 'scheduler_params' in line:
+            elif 'scheduler_params' in line:
                 optim = optim + '<br>' + ('<br>').join(line.split('  ')[-1].split('. ')[-1].split(', '))
-            if 'Peak Power during training' in line:
+            elif 'Peak Power during training' in line:
                 power = line.split()[-2].split('.')[0]
             
                 
@@ -99,27 +99,47 @@ def controle_technique(jobid):
         
         
             
+    # Create the speedometer figure
+    fig = go.Figure(
+            go.Indicator(
+                domain = {'x': [0, 0.5], 'y': [0, 1]},
+                value = throughput_tot,
+                mode = "gauge+number",
+                title = {'text': "Images/second"},
+                gauge = {
+                    'axis': {'range': [None, 10000]},
+                     'steps' : [
+                     {'range': [0, 1200], 'color': "lightgray"},
+                     {'range': [1200, 2800], 'color': "gray"}],
+                 #'threshold' : {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 3000}
+                        }
+                ),
+            layout=layout
+            )
     
-    fig = go.Figure(go.Indicator(
-    domain = {'x': [0, 0.5], 'y': [0, 1]},
-    value = throughput_tot,
-    mode = "gauge+number",
-    title = {'text': "Images/second"},
-    gauge = {'axis': {'range': [None, 10000]},
-             'steps' : [
-                 {'range': [0, 1200], 'color': "lightgray"},
-                 {'range': [1200, 2800], 'color': "gray"}],
-            # 'threshold' : {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 3000}
-            }),
-    layout=layout)
-    
+    # Show total power and throughput
+    if power: fig.add_annotation(x=0.25, y=0.5,
+            text=f"{int(power) * int(gpu)} W",
+            showarrow=False,
+            align='center',
+            font=dict(size=28),
+            xanchor='center')
     if throughput: fig.add_annotation(x=0.25, y=0.1,
             text=f"GPU : {throughput/1000:.2f} k",
             showarrow=False,
             align='center',
             font=dict(size=28),
             xanchor='center')
+
+    # Show log filename
+    fig.add_annotation(x=0.5, y=1.2,
+            text=log_out.split('/')[-1].split('.')[0],
+            showarrow=False,
+            align='center',
+            font=dict(size=20),
+            xanchor='center')
     
+    # Show Number of GPUs
     fig.add_layout_image(
         dict(
             source=engine,
@@ -128,7 +148,6 @@ def controle_technique(jobid):
             sizex=.2,
             sizey=.2,
             xanchor='center'))
-
     if bs: fig.add_annotation(x=0.6, y=0.8,
             text=f"{gpu} GPU",
             showarrow=False,
@@ -136,13 +155,7 @@ def controle_technique(jobid):
             font=dict(size=24),
             xanchor='center')
     
-    fig.add_annotation(x=0.5, y=1.2,
-            text=log_out.split('/')[-1].split('.')[0],
-            showarrow=False,
-            align='center',
-            font=dict(size=20),
-            xanchor='center')
-
+    # Show batch size
     fig.add_layout_image(
         dict(
             source=tire,
@@ -151,7 +164,6 @@ def controle_technique(jobid):
             sizex=.2,
             sizey=.2,
             xanchor='center'))
-
     if bs: fig.add_annotation(x=0.9, y=0.8,
             text=f"batch size: {bs}",
             showarrow=False,
@@ -159,33 +171,29 @@ def controle_technique(jobid):
             font=dict(size=24),
             xanchor='center')
 
+    # Show optimizer info
     fig.add_layout_image(
         dict(
             source=steering,
-            x=0.65,
+            x=0.6,
             y=0.6,
             sizex=.2,
             sizey=.2,
             xanchor='center'))
-    if bs: fig.add_annotation(x=0.85, y=0.0,
+    if bs: fig.add_annotation(x=0.75, y=-0.2,
             text=optim,
             showarrow=False,
             font=dict(size=16),
             xanchor='center',
             align='left')
-    if power: fig.add_annotation(x=0.25, y=0.5,
-            text=f"{int(power) * int(gpu)} W",
-            showarrow=False,
-            align='center',
-            font=dict(size=28),
-            xanchor='center')
+
     
     if throughput:
         fig.show()
         print(f'Train throughput: {throughput_tot:.2f} images/second')
         print(f'GPU throughput: {throughput:.2f} images/second')
         print(f'epoch time: {(it_time+load_time)*n_batch:.2f} seconds')
-        #print(f'training time estimation for 90 epochs (with validations): {((it_time+load_time)*n_batch+val_time)*n_epoch/3600:.2f} hours')
+        #print(f'training time estimation for {n_epoch} epochs (with validations): {((it_time+load_time)*n_batch+val_time)*n_epoch/3600:.2f} hours')
         print('-----------')
         print(f'training step time average (fwd/bkwd on GPU): {it_time:.6f} sec ({for_time/it_time*100:.1f}%/{back_time/it_time*100:.1f}%) +/- {it_time_std:.6f}')
         print(f'loading step time average (IO + CPU to GPU transfer): {load_time:.6f} sec +/- {load_time_std:.6f}')
@@ -528,25 +536,34 @@ def turbo_profiler(jobid, dataloader_info=False):
     with open(log_out, "r") as f:
         for line in f:
             if "Training complete" in line: 
-                time = line.split(' ')[-1].split('\n')[0]
-                training_time = float(time.split(':')[1])*60 + float(time.split(':')[2])
-            if "Training performance" in line: 
+                #time = line.split(' ')[-1].split('\n')[0]
+                #training_time = float(time.split(':')[1])*60 + float(time.split(':')[2])
+                time = line.replace('\n','').split(':')
+                training_time = float(time[-2])*60 + float(time[-1])
+            elif "Training performance" in line: 
                 it_time = float(line.split(' ')[-4])
-            if "Loading performance" in line:
+            elif "Loading performance" in line:
                 load_time = float(line.split(' ')[-4])
-            if "JSON" in line:
+            elif "JSON" in line:
                 perf = json.loads(line.split('>>>JSON ')[-1])
-            if dataloader_info and "DATALOADER" in line:
+            elif dataloader_info and "DATALOADER" in line:
                 num_workers = line.split(' ')[1]
                 persistent_workers = line.split(' ')[2]
                 pin_memory = line.split(' ')[3]
                 non_blocking = line.split(' ')[4]
                 prefetch_factor = line.split(' ')[5]
                 drop_last = line.split(' ')[6]
+            elif dataloader_info and "VmHWM" in line:
+                cpu_mem_usage = int(line.split(' ')[-2])/(1024**2)
+            elif dataloader_info and ">>> First step loading" in line:
+                first_step_load_time = line.split(' ')[-1]
                 
     print(f"\033[1m>>> Turbo Profiler >>>\033[0m Training complete in {training_time} s")
     pd.DataFrame(perf).plot(kind='bar', figsize=(18, 4))
-    plt.title('>>> Turbo Profiler >>>', fontsize=16)
+    if dataloader_info:
+        plt.title(f'>>> Turbo Profiler >>> CPU Memory Usage: {cpu_mem_usage:.3f} GB', fontsize=16)
+    else:
+        plt.title('>>> Turbo Profiler >>>', fontsize=16)
     plt.xlabel('Iterations', fontsize=14)
     plt.ylabel('Time in seconds', fontsize=14)
     plt.ylim(top=8)
@@ -562,14 +579,15 @@ def turbo_profiler(jobid, dataloader_info=False):
                                          "non_blocking":[str(non_blocking)],
                                          "prefetch_factor":[int(prefetch_factor)],
                                          "drop_last":[str(drop_last)],
-                                         "loading_time":[float(load_time)]})
+                                         "loading_time":[float(load_time)],
+                                         "1st_step_loading_time":[float(first_step_load_time)],
+                                         "CPU_memory_usage(GB)":[float(cpu_mem_usage)]})
                                          #"training_time":[float(training_time)]})
                                          #"forward_backward_time":[float(it_time)],
                                          #"iteration_time":[float(it_time)+float(load_time)],
         return dataloader_trial
 
-
-def comm_profiler(jobid):
+def comm_profiler(jobid, n_display=None, zoom=False):
     # jobid can either be a list, a tuple, an int, or a string
     if isinstance(jobid, (list, tuple)):
         jobid = jobid[0]
@@ -595,70 +613,101 @@ def comm_profiler(jobid):
             if ">>> Training on" in line:
                 n_rank = int(line.split()[-2])
                 break
-    steps = ['init.']*n_rank
     
-    comm_rank = {}
+    comm_rank = {} # Stores the global rank for the comm signature
 
     with open(log_out, "r") as f:
         for line in f:
-            if "NCCL INFO" in line and "opCount" in line and "datatype" in line: 
+            if "Init COMPLETE" in line:
+                # The comm signature is always assigned to the same rank 
+                # (e.g.0x5583fd7c2000 will always be rank 0
+                # That way we can map a comm to a rank easily
+                trace = line.split()
+                comm_rank[trace[6]] = int(trace[8]) 
+                steps = ['init.']*n_rank
+                
+            elif "Train step" in line:
+                step = int(line.split()[2])
+                rank = int(line.split()[-1])
+                steps[rank] = f'step {step}'
+
+            elif "Validation step" in line:
+                rank = int(line.split()[-1])
+                steps[rank] = 'valid.'
+            
+            elif "NCCL INFO" in line and "opCount" in line and "datatype" in line:
+                # example line:
+                # 0                              1   2    3    4          5       6 7        8              9        10             11    12     13       14 15 16 17   18 19   20             21         22     23
+                # jean-zay-iam06:3592738:3592738 [2] NCCL INFO Broadcast: opCount 0 sendbuff 0x150068400000 recvbuff 0x150068400000 count 151424 datatype 7  op 0  root 0  comm 0x55e5fb382000 [nranks=4] stream 0x55e5f451eb60
                 coll_trace = line.split()
-                coll_dict['local_rank'].append(int(coll_trace[1][1:-1]))
-                coll_dict['coll_operation'].append(coll_trace[4][:-1])
-                coll_dict['opCount'].append(int(coll_trace[6], 16))
-                comm = coll_trace[20]
+                comm = coll_trace[20] # Comm signature
                 coll_dict['comm'].append(comm)
+                coll_dict['train_step'].append(steps[comm_rank[comm]]) # On n'utilise pas le rang local mais global, qui est seulement donné par la signature de la communication.
+                coll_dict['local_rank'].append(int(coll_trace[1][1:-1]))
+                coll_dict['coll_operation'].append(coll_trace[4].replace(":",""))
+                coll_dict['opCount'].append(int(coll_trace[6], 16)) # Variable interne à NCCL. La valeur est en hexadécimal
+                coll_dict['sendbuff'].append(coll_trace[8])
+                coll_dict['recvbuff'].append(coll_trace[10])
                 coll_dict['Count'].append(np.int64(coll_trace[12]))
                 coll_dict['datatype'].append(np.int32(coll_trace[14]))
                 coll_dict['op'].append(np.int32(coll_trace[16]))
                 coll_dict['root'].append(np.int32(coll_trace[18]))
                 coll_dict['stream'].append(coll_trace[23])
-                coll_dict['sendbuff'].append(coll_trace[8])
-                coll_dict['recvbuff'].append(coll_trace[10])
-                coll_dict['train_step'].append(steps[comm_rank[comm]])
-                
-            elif "Init COMPLETE" in line:
-                trace = line.split()
-                comm_rank[trace[5]] = int(trace[7])
-                
-            elif "Train step" in line:
-                step = int(line.split()[2])
-                rank = int(line.split()[-1])
-                steps[rank] = 'init.' if step==0 else 'valid.' if step==100 else f'step {step}'
+    
                 
                         
     df = pd.DataFrame(coll_dict)
+    # Only keep the init., validation and first 10 steps 
     df = df[df.train_step.isin(['init.', 'valid.']+[f'step {i}'for i in np.arange(10)+1])]
-    df['global_rank'] = [comm_rank[c] for c in df.comm]
+    df['global_rank'] = df.comm.apply(lambda c: comm_rank[c])
     df = df.set_index('opCount').sort_index()
-    
-    df.loc[df[df.datatype.isin([2,3,7])].index, 'Count'] *= 4
-    df.loc[df[df.datatype.isin([4,5,8])].index, 'Count'] *= 8
-    df.loc[df[df.datatype.isin([6,9])].index, 'Count'] *= 2
+
+    # "Count" correspond au nombre d'éléments impliqués dans l'opération. 
+    # En fonction du type de donnée de l'élément il faut le multiplier
+    # par le nombre d'octets impliqués pour obtenir le volume des communications. 
+    # La correspondance est donnée dans le dictionnaire 'nccldtype' plus bas.
+    df['Volume'] = df.Count.copy()
+    df['Volume'] = np.where(df.datatype.isin([6,9]), df.Count*2, df.Volume)
+    df['Volume'] = np.where(df.datatype.isin([2,3,7]), df.Count*4, df.Volume)
+    df['Volume'] = np.where(df.datatype.isin([4,5,8]), df.Count*8, df.Volume)
+    #nccldtype = {0: 'ncclInt8',
+    #          1: 'ncclUint8',
+    #          2: 'ncclInt32',
+    #          3: 'ncclUint32',
+    #          4: 'ncclInt64',
+    #          5: 'ncclUint64',
+    #          6: 'ncclFloat16',
+    #          7: 'ncclFloat32',
+    #          8: 'ncclFloat64',
+    #          9: 'ncclBfloat16',
+    #          10: 'ncclNumTypes'
+    #        }
     
     dico = {}
     for r in np.sort(df.global_rank.unique()):
-        dico[f'rank: {r}'] = df[df.global_rank==r].Count
-    nccldtype = { 0: 'ncclInt8',
-              1: 'ncclUint8',
-              2: 'ncclInt32',
-              3: 'ncclUint32',
-              4: 'ncclInt64',
-              5: 'ncclUint64',
-              6: 'ncclFloat16',
-              7: 'ncclFloat32',
-              8: 'ncclFloat64',
-              9: 'ncclBfloat16',
-              10: 'ncclNumTypes'
-            }
-    dico['operations'] = df[df.global_rank==0].train_step + ' - ' + df[df.global_rank==0].coll_operation + ' - (' + df[df.global_rank==0].datatype.replace(nccldtype) + ')'
+        dico[f'rank: {r}'] = df[df.global_rank==r].Volume
+    
+    dico['operations'] = df[df.global_rank==0].train_step + ' - ' + df[df.global_rank==0].coll_operation
     dfplot = pd.DataFrame(dico)
     dfplot = dfplot.set_index('operations')
-    dfplot.iloc[-110:].plot.bar(figsize=(18, 3), rot=90, title=f'Collective Communication Profiler - Nbr of operations: {len(df)}', ylabel='communications Bytes')
-    dfplot = dfplot.groupby('operations', sort=False).sum()
-    dfplot.plot.bar(figsize=(18, 3), rot=90, title=f'Aggregate Collective Communication Profiler - global count: {df.Count.sum()} Bytes', ylabel='communications Bytes')
+    if zoom:
+        if n_display:
+            dfplot.iloc[:n_display].plot.bar(figsize=(15, 2), rot=90, title=f'Collective Communication Profiler - Nbr of operations: {len(df)}', ylabel='communications Bytes', ylim=(0,100))
+            dfplot.iloc[-n_display:].plot.bar(figsize=(15, 2), rot=90, title=f'Collective Communication Profiler - Nbr of operations: {len(df)}', ylabel='communications Bytes', ylim=(0,100))
+        else:
+            dfplot.plot.bar(figsize=(15, 2), rot=90, title=f'Collective Communication Profiler - Nbr of operations: {len(df)}', ylabel='communications Bytes', ylim=(0,10))
+    else:
+        if n_display:
+            dfplot.iloc[:n_display].plot.bar(figsize=(15, 2), rot=90, title=f'Collective Communication Profiler - Nbr of operations: {len(df)}', ylabel='communications Bytes')
+            dfplot.iloc[-n_display:].plot.bar(figsize=(15, 2), rot=90, title=f'Collective Communication Profiler - Nbr of operations: {len(df)}', ylabel='communications Bytes')
+        else:
+            dfplot.plot.bar(figsize=(15, 2), rot=90, title=f'Collective Communication Profiler - Nbr of operations: {len(df)}', ylabel='communications Bytes')
+    dfgroup = dfplot.groupby('operations', sort=False).sum()
+    if not zoom: dfgroup.plot.bar(figsize=(15, 2), rot=90, title=f'Aggregate Collective Communication Profiler - global count: {df.Count.sum()/1e9:.2f} GBytes', ylabel='communications Bytes')
     
     plt.show()
+
+    return dfplot
     
     
 def BatchNorm_view(jobid, model, labels=None):
@@ -704,6 +753,11 @@ def BatchNorm_view(jobid, model, labels=None):
         ax[1,1].legend(fontsize=14)
         ax[0,1].legend(fontsize=14)
     plt.show()
-    
 
-                
+def metric_compute_log(jobid):
+    log_out = search_log(contains=jobid[0])[0]
+    with open(log_out, "r") as f:
+        for line in f:
+            if "metric compute GPU" in line: 
+                print(line.split('\n')[0])
+
