@@ -176,7 +176,7 @@ for i, (input_ids, attention_mask, labels) in enumerate(dataloader, start=1):
 
 #### Training loop
 chrono.start()
-chrono.dataload()
+chrono.next_iter()
 if idr_torch.rank == 0: chrono.tac_time(clear=True)
 for i, (input_ids, attention_mask, labels) in enumerate(dataloader, start=1):
     if args.test and i > args.test_nsteps: break
@@ -186,8 +186,6 @@ for i, (input_ids, attention_mask, labels) in enumerate(dataloader, start=1):
     attention_mask = attention_mask.to(device, non_blocking=args.non_blocking)
     labels = labels.to(device, non_blocking=args.non_blocking)
 
-    chrono.dataload()
-    chrono.training()
     chrono.forward()
 
     optimizer.zero_grad()
@@ -202,13 +200,11 @@ for i, (input_ids, attention_mask, labels) in enumerate(dataloader, start=1):
     loss_metric.update(loss)
     perplexity.update(logits, labels)
 
-    chrono.forward()
     chrono.backward()
     loss.backward()
     optimizer.step()
     lr_scheduler.step()
-    chrono.backward()
-    chrono.training()
+    chrono.update()
 
     if i % 5 == 0:
         L = loss_metric.compute()
@@ -217,7 +213,9 @@ for i, (input_ids, attention_mask, labels) in enumerate(dataloader, start=1):
         if idr_torch.rank == 0:
             print(f"Step {i} / {args.test_nsteps if args.test else len(dataloader)} | Loss: {L.item():.3f} | Perplexity: {perp.item():.3f} | LR: {last_lr:0.3e} | Wall: {chrono.tac_time()}")
 
-    chrono.dataload()
+    chrono.next_iter()
+
+chrono.stop()
 ####
 
 chrono.display()

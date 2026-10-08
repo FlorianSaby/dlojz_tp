@@ -105,7 +105,7 @@ def controle_technique(jobid):
                 domain = {'x': [0, 0.5], 'y': [0, 1]},
                 value = throughput_tot,
                 mode = "gauge+number",
-                title = {'text': "Images/second"},
+                title = {'text': "Sequences/second"},
                 gauge = {
                     'axis': {'range': [None, 10000]},
                      'steps' : [
@@ -190,8 +190,8 @@ def controle_technique(jobid):
     
     if throughput:
         fig.show()
-        print(f'Train throughput: {throughput_tot:.2f} images/second')
-        print(f'GPU throughput: {throughput:.2f} images/second')
+        print(f'Train throughput: {throughput_tot:.2f} Sequences/second')
+        print(f'GPU throughput: {throughput:.2f} Sequences/second')
         print(f'epoch time: {(it_time+load_time)*n_batch:.2f} seconds')
         #print(f'training time estimation for {n_epoch} epochs (with validations): {((it_time+load_time)*n_batch+val_time)*n_epoch/3600:.2f} hours')
         print('-----------')
@@ -320,7 +320,7 @@ def GPU_underthehood(jobids, calcul_memo=True):
     font={'size':14})
     
     fig.update_yaxes(title_text='GBytes', col=1)
-    fig.update_yaxes(title_text='Images/s', col=2, secondary_y=False)
+    fig.update_yaxes(title_text='Sequences/s', col=2, secondary_y=False)
     fig.update_yaxes(title_text='GPU Power consumption (Watt) ', col=2, secondary_y=True)
     if calcul_memo: fig.update_xaxes(title_text='Batch size')
     
@@ -358,7 +358,7 @@ def GPU_underthehood(jobids, calcul_memo=True):
         if mem[i] == 'OOM':
             print(f'Batch size per GPU: {bs} CUDA out of memory')
         else:
-            print(f'Batch size per GPU: {bs} Max GPU Memory Allocated: {mem[i]/2**30:.2f} GB, Troughput: {int(bs)/it_time[i]:.3f} images/second')
+            print(f'Batch size per GPU: {bs} Max GPU Memory Allocated: {mem[i]/2**30:.2f} GB, Troughput: {int(bs)/it_time[i]:.3f} Sequences/second')
         
     if calcul_memo: print(f'Memory occupancy by Model part : {np.mean(model_mem):.3f} +/- {np.std(model_mem):.3f} GB')
     
