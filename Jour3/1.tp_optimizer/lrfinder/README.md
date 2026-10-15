@@ -23,12 +23,12 @@ The algorithm implemented here comes from Grugger's post: [How Do You Find a Goo
 
 ```
 python cifar10_Grugger_lrfinder.py --nepochs 100 \
-		--batch-size 8192 \
-		--optim 'AdamW' \
-		--min-lr 1e-4 \
-		--max-lr 1e0 \
-		--mom 0.9 \
-		--wd 0.0
+				--batch-size 8192 \
+				--optim 'AdamW' \
+				--min-lr 1e-4 \
+				--max-lr 1e0 \
+				--mom 0.9 \
+				--wd 0.0
 ```
 
 with:
