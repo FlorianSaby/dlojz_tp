@@ -9,19 +9,21 @@ from torch.utils.checkpoint import checkpoint_sequential
 import torch                                                                                                  
 import numpy as np                                     
 import apex
-                                                                                                              
+
 import idr_torch                                                                                              
 from dlojz_chrono import Chronometer
 from torchmetrics.aggregation import MeanMetric
 from torchmetrics.classification import MulticlassAccuracy
-                                                                                                              
-import random                                                                                                 
+
+import random
+
 random.seed(123)                                                                                              
 np.random.seed(123)                                                                                           
 torch.manual_seed(123)
 
 ## import ... ## Add here the libraries to import
 from torch.amp import autocast, GradScaler
+from torch.profiler import profile, tensorboard_trace_handler, ProfilerActivity, schedule, record_function
 
 VAL_BATCH_SIZE=250
 
@@ -65,7 +67,7 @@ def train():
                         help='activate asynchronuous GPU transfer')
     parser.add_argument('--prefetch-factor', default=2, type=int,
                         help='prefectch factor in dataloader')
-    parser.add_argument('--drop-last', default=False, action=argparse.BooleanOptionalAction,
+    parser.add_argument('--drop-last', default=True, action=argparse.BooleanOptionalAction,
                         help='activate drop_last option in dataloader')
     parser.add_argument('--chkpt', default=False, action='store_true',
                         help='Save last checkpoint')
@@ -177,101 +179,103 @@ def train():
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=args.lr,
                                                 steps_per_epoch=N_batch, epochs=args.epochs)
 
-    
+    prof =  None # TODO: Implement the torch profiler similar to TP1_4
     
     chrono.start()                               
     
     #### TRAINING ############
-    for epoch in range(args.epochs):
+    with prof:
+        for epoch in range(args.epochs):
+    
+            if args.test: chrono.next_iter()
+            if idr_torch.rank == 0: chrono.tac_time(clear=True)
+            for i, (images, labels) in enumerate(train_loader):    
+    
+                csteps = (i+1) + (epoch*N_batch)
+                if args.test and csteps > args.test_nsteps: break
+                if args.test: print(f'Train step {csteps} - rank {idr_torch.rank}')
+                if i == 0 and idr_torch.rank == 0:
+                    print(f'image batch shape : {images.size()}')
+                
+                # distribution of images and labels to all GPUs
+                images = images.to(gpu, non_blocking=args.non_blocking, memory_format=torch.channels_last)
+                labels = labels.to(gpu, non_blocking=args.non_blocking)
 
-        if args.test: chrono.next_iter()
-        if idr_torch.rank == 0: chrono.tac_time(clear=True)
-        for i, (images, labels) in enumerate(train_loader):    
-
-            csteps = (i+1) + (epoch*N_batch)
-            if args.test and csteps > args.test_nsteps: break
-            if args.test: print(f'Train step {csteps} - rank {idr_torch.rank}')
-            if i == 0 and idr_torch.rank == 0:
-                print(f'image batch shape : {images.size()}')
             
-            # distribution of images and labels to all GPUs
-            images = images.to(gpu, non_blocking=args.non_blocking, memory_format=torch.channels_last)
-            labels = labels.to(gpu, non_blocking=args.non_blocking)
+                if args.test: chrono.forward()
+    
+                with record_function("optimizer zero grad"): optimizer.zero_grad()
+                # Implement autocasting
+                with autocast('cuda'):
+                    with record_function("inference"): outputs = model(images)
+                    with record_function("loss function"): loss = criterion(outputs, labels)
+                
+                if args.test: chrono.backward()       
 
-            
-            if args.test: chrono.forward()
+                # Implement gradient scaling
+                with record_function("gradient compute"): scaler.scale(loss).backward()
+                with record_function("optimizer step and weights update"): scaler.step(optimizer)
+                with record_function("Scaler update"): scaler.update()
 
-            optimizer.zero_grad()
-            # Implement autocasting
-            with autocast('cuda'):
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-            
-            if args.test: chrono.backward()       
+                # Metric mesurement
+                train_metric['loss'].update(loss)
+                train_metric['acc'].update(outputs, labels)
 
-            # Implement gradient scaling
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+                if args.test: chrono.update()
+     
+                if ((i + 1) % (N_batch//10) == 0 or i == N_batch - 1):
+                    train_loss, accuracy = train_metric['loss'].compute(), train_metric['acc'].compute()
+                    train_metric['loss'].reset(), train_metric['acc'].reset()
+                    if idr_torch.rank == 0:
+                        print('Epoch [{}/{}], Step [{}/{}], Time: {:.3f}, Loss: {:.4f}, Acc:{:.4f}'.format(
+                              epoch + 1, args.epochs, i+1, N_batch,
+                              chrono.tac_time(), train_loss, accuracy))
 
-            # Metric mesurement
-            train_metric['loss'].update(loss)
-            train_metric['acc'].update(outputs, labels)
+                # scheduler update
+                scheduler.step()
+                if prof!=None: prof.step()
 
-            if args.test: chrono.update()
+                #### VALIDATION ############   
+                if ((i == N_batch - 1) or (args.test and i==args.test_nsteps-1)) :
  
-            if ((i + 1) % (N_batch//10) == 0 or i == N_batch - 1):
-                train_loss, accuracy = train_metric['loss'].compute(), train_metric['acc'].compute()
-                train_metric['loss'].reset(), train_metric['acc'].reset()
-                if idr_torch.rank == 0:
-                    print('Epoch [{}/{}], Step [{}/{}], Time: {:.3f}, Loss: {:.4f}, Acc:{:.4f}'.format(
-                          epoch + 1, args.epochs, i+1, N_batch,
-                          chrono.tac_time(), train_loss, accuracy))
+                    chrono.validation()
+                    model.eval()
+                    if args.test: print(f'Validation step - rank {idr_torch.rank}')
 
-            # scheduler update
-            scheduler.step()
-
-            #### VALIDATION ############   
-            if ((i == N_batch - 1) or (args.test and i==args.test_nsteps-1)) :
- 
-                chrono.validation()
-                model.eval()
-                if args.test: print(f'Validation step - rank {idr_torch.rank}')
-
-                for iv, (val_images, val_labels) in enumerate(val_loader): 
+                    for iv, (val_images, val_labels) in enumerate(val_loader): 
 
                     
-                    # distribution of images and labels to all GPUs
-                    val_images = val_images.to(gpu, non_blocking=args.non_blocking, memory_format=torch.channels_last)
-                    val_labels = val_labels.to(gpu, non_blocking=args.non_blocking)
+                        # distribution of images and labels to all GPUs
+                        val_images = val_images.to(gpu, non_blocking=args.non_blocking, memory_format=torch.channels_last)
+                        val_labels = val_labels.to(gpu, non_blocking=args.non_blocking)
 
                     # Runs the forward pass with no grad mode.
-                    with torch.no_grad():
-                        # Implement autocasting
-                        with autocast('cuda'):
-                            val_outputs = model(val_images)
-                            val_loss = criterion(val_outputs, val_labels)
+                        with torch.no_grad():
+                            # Implement autocasting
+                            with autocast('cuda'):
+                                val_outputs = model(val_images)
+                                val_loss = criterion(val_outputs, val_labels)
 
-                    val_metric['loss'].update(val_loss)
-                    val_metric['acc'].update(val_outputs, val_labels)
+                        val_metric['loss'].update(val_loss)
+                        val_metric['acc'].update(val_outputs, val_labels)
                                  
-                    if args.test and iv >= 20: break
+                        if args.test and iv >= 20: break
                                                    
-                val_loss, val_accuracy = val_metric['loss'].compute(), val_metric['acc'].compute()
-                val_metric['loss'].reset(), val_metric['acc'].reset()
+                    val_loss, val_accuracy = val_metric['loss'].compute(), val_metric['acc'].compute()
+                    val_metric['loss'].reset(), val_metric['acc'].reset()
 
 
-                model.train()  
-                chrono.validation()   
-                if not args.test and idr_torch.rank == 0:
-                    print('##EVALUATION STEP##')
-                    print('Epoch [{}/{}], Validation Loss: {:.4f}, Validation Accuracy: {:.4f}'.format(
-                                         epoch + 1, args.epochs, val_loss, val_accuracy))
-                    print(">>> Validation complete in: " + str(chrono.val_time))
+                    model.train()  
+                    chrono.validation()   
+                    if not args.test and idr_torch.rank == 0:
+                        print('##EVALUATION STEP##')
+                        print('Epoch [{}/{}], Validation Loss: {:.4f}, Validation Accuracy: {:.4f}'.format(
+                                             epoch + 1, args.epochs, val_loss, val_accuracy))
+                        print(">>> Validation complete in: " + str(chrono.val_time))
 
-            #### END OF VALIDATION ############
+                #### END OF VALIDATION ############
             
-            if args.test: chrono.next_iter()
+                if args.test: chrono.next_iter()
     
                                                              
     chrono.stop()
