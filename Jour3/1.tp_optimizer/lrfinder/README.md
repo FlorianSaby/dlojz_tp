@@ -2,11 +2,16 @@
 
 ## Goal
 
-We want to find a proper learning rate range for our training.\
-The idea is to start training the model by progressively increasing the learning rate and to report the loss value.\
+We want to find a proper learning rate range for our training.
+
+The idea is to start training the model by progressively increasing the learning rate and to report the loss value.
+
 The best learning rate value should be **one order of magnitude lower than the one corresponding to the minimum loss value**.
 
+## Credits 
+
 This idea comes from the paper by Smith: [Cyclical Learning Rates for Training Neural Networks (2017)](arXiv:1506.01186).
+
 The algorithm implemented here comes from Grugger's post: [How Do You Find a Good Learning Rate? (2018)](https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html).
 
 ## Context
@@ -18,12 +23,12 @@ The algorithm implemented here comes from Grugger's post: [How Do You Find a Goo
 
 ```
 python cifar10_Grugger_lrfinder.py --nepochs 100 \
-								   	--batch-size 8192 \
-									--optim 'AdamW' \
-									--min-lr 1e-4 \
-									--max-lr 1e0 \
-									--mom 0.9 \
-									--wd 0.0
+		--batch-size 8192 \
+		--optim 'AdamW' \
+		--min-lr 1e-4 \
+		--max-lr 1e0 \
+		--mom 0.9 \
+		--wd 0.0
 ```
 
 with:
